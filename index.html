@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="生徒が毎日の学習を記録できるアプリ" />
+  <title>まなびログ – 学習記録</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <h1 class="app-title">📖 まなびログ</h1>
+    <p class="app-subtitle">きょうの学習を記録しよう</p>
+  </header>
+
+  <main id="main">
+    <!-- ホーム(ダッシュボード) -->
+    <section id="view-home" class="view" aria-labelledby="tab-home">
+      <div class="stat-row">
+        <div class="stat-tile">
+          <div class="stat-label">今日の学習時間</div>
+          <div class="stat-value" id="stat-today">0<span class="stat-unit">分</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">今週の合計</div>
+          <div class="stat-value" id="stat-week">0<span class="stat-unit">分</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">連続記録</div>
+          <div class="stat-value" id="stat-streak">0<span class="stat-unit">日</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">この1週間の学習時間</h2>
+        <div id="week-chart" class="week-chart" role="img" aria-label="この1週間の学習時間の棒グラフ"></div>
+        <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">今週の教科別学習時間</h2>
+        <div id="subject-breakdown" class="subject-breakdown"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">最近の記録</h2>
+        <div id="recent-records"></div>
+      </div>
+    </section>
+
+    <!-- 記録する -->
+    <section id="view-add" class="view" hidden aria-labelledby="tab-add">
+      <div class="card">
+        <h2 class="card-title" id="form-title">学習を記録する</h2>
+        <form id="record-form">
+          <input type="hidden" id="f-id" />
+          <div class="form-group">
+            <label for="f-date">日付</label>
+            <input type="date" id="f-date" required />
+          </div>
+          <div class="form-group">
+            <label for="f-subject">教科</label>
+            <select id="f-subject" required></select>
+          </div>
+          <div class="form-group">
+            <label for="f-content">学習した内容</label>
+            <input type="text" id="f-content" placeholder="例:漢字ドリル p.12〜15" required maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label for="f-minutes">学習時間(分)</label>
+            <div class="minutes-row">
+              <input type="number" id="f-minutes" min="1" max="720" required placeholder="30" />
+              <div class="minute-presets">
+                <button type="button" class="preset-btn" data-min="15">15分</button>
+                <button type="button" class="preset-btn" data-min="30">30分</button>
+                <button type="button" class="preset-btn" data-min="45">45分</button>
+                <button type="button" class="preset-btn" data-min="60">60分</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>理解度</label>
+            <div class="rating-row" id="f-rating" role="radiogroup" aria-label="理解度を5段階で選ぶ">
+              <button type="button" class="rating-btn" data-val="1" aria-label="理解度1">😰</button>
+              <button type="button" class="rating-btn" data-val="2" aria-label="理解度2">😕</button>
+              <button type="button" class="rating-btn" data-val="3" aria-label="理解度3">🙂</button>
+              <button type="button" class="rating-btn" data-val="4" aria-label="理解度4">😄</button>
+              <button type="button" class="rating-btn" data-val="5" aria-label="理解度5">🤩</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="f-memo">ふりかえり・メモ(任意)</label>
+            <textarea id="f-memo" rows="3" placeholder="むずかしかったこと、次にがんばりたいことなど" maxlength="500"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="save-btn">記録する</button>
+            <button type="button" class="btn btn-ghost" id="cancel-edit-btn" hidden>キャンセル</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 一覧 -->
+    <section id="view-list" class="view" hidden aria-labelledby="tab-list">
+      <div class="list-controls">
+        <select id="filter-subject" aria-label="教科でしぼりこむ">
+          <option value="">すべての教科</option>
+        </select>
+        <select id="filter-period" aria-label="期間でしぼりこむ">
+          <option value="all">すべての期間</option>
+          <option value="week">今週</option>
+          <option value="month">今月</option>
+        </select>
+      </div>
+      <div id="record-list"></div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="view-settings" class="view" hidden aria-labelledby="tab-settings">
+      <div class="card">
+        <h2 class="card-title">教科の管理</h2>
+        <ul id="subject-list" class="subject-list"></ul>
+        <form id="subject-form" class="subject-form">
+          <input type="text" id="new-subject" placeholder="新しい教科名" maxlength="20" required />
+          <button type="submit" class="btn btn-primary">追加</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2 class="card-title">目標</h2>
+        <div class="form-group">
+          <label for="goal-minutes">1日の目標学習時間(分)</label>
+          <input type="number" id="goal-minutes" min="0" max="720" step="5" />
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">データ</h2>
+        <div class="data-actions">
+          <button type="button" class="btn btn-ghost" id="export-btn">データを書き出す(JSON)</button>
+          <label class="btn btn-ghost" for="import-file">データを読み込む
+            <input type="file" id="import-file" accept="application/json" hidden />
+          </label>
+        </div>
+        <p class="data-note">データはこの端末のブラウザにだけ保存されます。端末をかえるときは書き出し・読み込みを使ってください。</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tab-bar" role="tablist" aria-label="画面切りかえ">
+    <button class="tab active" id="tab-home" role="tab" aria-selected="true" data-view="home">
+      <span class="tab-icon">🏠</span><span class="tab-text">ホーム</span>
+    </button>
+    <button class="tab" id="tab-add" role="tab" aria-selected="false" data-view="add">
+      <span class="tab-icon">✏️</span><span class="tab-text">記録する</span>
+    </button>
+    <button class="tab" id="tab-list" role="tab" aria-selected="false" data-view="list">
+      <span class="tab-icon">📋</span><span class="tab-text">一覧</span>
+    </button>
+    <button class="tab" id="tab-settings" role="tab" aria-selected="false" data-view="settings">
+      <span class="tab-icon">⚙️</span><span class="tab-text">設定</span>
+    </button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
