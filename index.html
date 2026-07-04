@@ -271,6 +271,33 @@
       </div>
 
       <div class="card">
+        <h2 class="card-title">自分のAIキーで問題をつくる(任意)</h2>
+        <p class="hint">自分で用意したAPIキーを登録すると、学校のサーバーを通さずにAI問題生成が使えます。キーは<strong>この端末の中だけ</strong>に保存され、同期・書き出しには含まれません。</p>
+        <div class="form-group">
+          <label for="byok-provider">AIの種類</label>
+          <select id="byok-provider">
+            <option value="">使わない(学校のAIを使う)</option>
+            <option value="openai">OpenAI(ChatGPT)</option>
+            <option value="anthropic">Anthropic(Claude)</option>
+            <option value="gemini">Google(Gemini)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="byok-key">APIキー</label>
+          <input type="password" id="byok-key" placeholder="sk-... / AIza..." autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label for="byok-model">モデル(空欄で標準)</label>
+          <input type="text" id="byok-model" placeholder="例: gpt-4o-mini" autocomplete="off" />
+        </div>
+        <div class="data-actions">
+          <button type="button" class="btn btn-primary" id="byok-save-btn">保存する</button>
+          <button type="button" class="btn btn-ghost" id="byok-clear-btn">キーを削除</button>
+        </div>
+        <p class="hint">⚠️ 注意:利用料は自分(のキー)の負担になります。共用のパソコンにはキーを保存しないこと。各AIサービスの利用規約(年齢条件など)を守り、キーの管理は保護者・先生と相談してください。</p>
+      </div>
+
+      <div class="card">
         <h2 class="card-title">アカウント(オンライン同期)</h2>
         <div id="account-body">
           <p class="hint">読みこみ中…</p>
@@ -360,6 +387,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
+  <script src="byok.js"></script>
   <script src="app.js"></script>
   <script type="module" src="cloud.js"></script>
 </body>

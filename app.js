@@ -22,6 +22,7 @@ const K = {
   friendCode: "seiseki.friendCode",
   timer: "seiseki.timer",
   notified: "seiseki.notifiedOn",
+  byok: "seiseki.byok", // 個人APIキー(この端末のみ・同期/書き出し対象外)
 };
 
 /* オンライン同期の状態(実装はファイル後半。save()から参照されるためここで宣言) */
@@ -1084,6 +1085,11 @@ function renderSettings() {
 
   renderAccount();
 
+  const byok = load(K.byok, null);
+  document.getElementById("byok-provider").value = byok?.provider || "";
+  document.getElementById("byok-key").value = byok?.apiKey || "";
+  document.getElementById("byok-model").value = byok?.model || "";
+
   const nb = document.getElementById("notify-btn");
   if (!("Notification" in window)) {
     nb.disabled = true;
@@ -1153,6 +1159,32 @@ document.getElementById("s-weekly-goal").addEventListener("change", (e) => {
   profile.weeklyGoalHours = Math.max(0, Number(e.target.value) || 0);
   save(K.profile, profile);
   toast(profile.weeklyGoalHours > 0 ? `週の目標を${profile.weeklyGoalHours}時間にしました` : "週の目標をなしにしました");
+});
+
+/* 個人APIキー(BYOK)の保存・削除
+   ※ localStorageへの直接保存にして、クラウド同期(save→push)の対象から外す */
+document.getElementById("byok-save-btn").addEventListener("click", () => {
+  const provider = document.getElementById("byok-provider").value;
+  const apiKey = document.getElementById("byok-key").value.trim();
+  const model = document.getElementById("byok-model").value.trim();
+  if (!provider) {
+    localStorage.removeItem(K.byok);
+    toast("自分のキーは使わない設定にしました(学校のAIを使います)");
+    return;
+  }
+  if (!apiKey) {
+    toast("APIキーを入力してください");
+    return;
+  }
+  localStorage.setItem(K.byok, JSON.stringify({ provider, apiKey, model }));
+  toast(`${window.BYOK.PROVIDER_LABELS[provider]}のキーをこの端末に保存しました 🔑`);
+});
+document.getElementById("byok-clear-btn").addEventListener("click", () => {
+  localStorage.removeItem(K.byok);
+  document.getElementById("byok-provider").value = "";
+  document.getElementById("byok-key").value = "";
+  document.getElementById("byok-model").value = "";
+  toast("キーを削除しました");
 });
 
 document.getElementById("notify-btn").addEventListener("click", async () => {
@@ -1392,8 +1424,16 @@ function closeQuiz() {
 async function aiGenerate(printId) {
   const meta = prints.find((p) => p.id === printId);
   if (!meta) return;
+
+  // 1) 自分のAPIキー(BYOK)が登録されていれば、それを優先して端末から直接生成
+  const byok = load(K.byok, null);
+  if (byok?.provider && byok?.apiKey) {
+    return aiGenerateWithOwnKey(meta, byok);
+  }
+
+  // 2) 学校のサーバー(Cloud Functions)経由
   if (cloudState !== "ready") {
-    toast("AI問題生成にはオンライン設定(firebase-config.js)が必要です");
+    toast("AI問題生成には、学校のオンライン設定(firebase-config.js)か、自分のAPIキー(設定 → 自分のAIキー)が必要です");
     return;
   }
   if (!cloudUser) {
@@ -1411,6 +1451,34 @@ async function aiGenerate(printId) {
   } catch (e) {
     console.error(e);
     quizBody.innerHTML = `<p class="empty-note">${escapeHtml(e?.message || "生成に失敗しました。少し待ってもう一度ためしてください")}</p>`;
+  }
+}
+
+/* 自分のAPIキーで、この端末からAI各社へ直接リクエストして生成する */
+async function aiGenerateWithOwnKey(meta, byok) {
+  const blob = await idbGet(meta.id);
+  if (!blob) {
+    toast("この端末にファイルの実体がありません。アップロードした端末で使うか、もう一度アップロードしてください");
+    return;
+  }
+  quizModal.hidden = false;
+  quizBody.innerHTML = `<p class="empty-note">🔑 自分のキー(${escapeHtml(
+    window.BYOK.PROVIDER_LABELS[byok.provider] || byok.provider
+  )})で問題をつくっています…<br>(30秒〜1分ほどかかります)</p>`;
+  try {
+    const { questions } = await window.BYOK.generate({
+      provider: byok.provider,
+      apiKey: byok.apiKey,
+      model: byok.model,
+      blob,
+      mimeType: meta.type,
+      subject: meta.subject,
+    });
+    quiz = { questions, index: 0, wrong: [], correct: 0, subject: meta.subject };
+    renderQuizStep();
+  } catch (e) {
+    console.error(e);
+    quizBody.innerHTML = `<p class="empty-note">${escapeHtml(e?.message || "生成に失敗しました")}</p>`;
   }
 }
 
