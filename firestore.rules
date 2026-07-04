@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 自分のデータだけ読み書きできる
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // プリントのメタデータ(本人のみ)
+      match /prints/{printId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // AI利用回数などサーバー管理の内部データ:
+      // 本人も書きかえ不可(Cloud FunctionsのAdmin SDKだけが書く)
+      match /private/{doc} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // 上記以外はすべて拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

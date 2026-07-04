@@ -2,3 +2,4 @@ node_modules/
 .firebase/
 .firebaserc
 *.log
+functions/node_modules/

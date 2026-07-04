@@ -271,6 +271,13 @@
       </div>
 
       <div class="card">
+        <h2 class="card-title">アカウント(オンライン同期)</h2>
+        <div id="account-body">
+          <p class="hint">読みこみ中…</p>
+        </div>
+      </div>
+
+      <div class="card">
         <h2 class="card-title">データ</h2>
         <p class="hint">データはこの端末のブラウザに保存されます。端末をかえるときは書き出し・読み込みを使ってください。</p>
         <div class="data-actions">
@@ -319,6 +326,17 @@
     </div>
   </div>
 
+  <!-- AI問題モーダル -->
+  <div class="modal-overlay" id="quiz-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="quiz-title">
+      <div class="card-title-row">
+        <h2 class="card-title" id="quiz-title">AIで問題をつくる</h2>
+        <button type="button" class="link-btn" id="quiz-close-btn">とじる</button>
+      </div>
+      <div id="quiz-body"></div>
+    </div>
+  </div>
+
   <nav class="tab-bar" role="tablist" aria-label="画面切りかえ">
     <button class="tab active" id="tab-home" role="tab" aria-selected="true" data-view="home">
       <span class="tab-icon">🏠</span><span class="tab-text">ホーム</span>
@@ -343,5 +361,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="app.js"></script>
+  <script type="module" src="cloud.js"></script>
 </body>
 </html>

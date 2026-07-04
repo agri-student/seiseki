@@ -24,6 +24,11 @@ const K = {
   notified: "seiseki.notifiedOn",
 };
 
+/* オンライン同期の状態(実装はファイル後半。save()から参照されるためここで宣言) */
+let cloudUser = null;
+let cloudState = "loading"; // loading | disabled | ready
+let pushTimer = null;
+
 function load(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -34,6 +39,8 @@ function load(key, fallback) {
 }
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+  localStorage.setItem("seiseki.savedAt", String(Date.now()));
+  scheduleCloudPush();
 }
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -872,25 +879,48 @@ document.getElementById("print-file").addEventListener("change", async (e) => {
     toast("保存に失敗しました(容量不足の可能性があります)");
     return;
   }
-  prints.push({ id, subject: printSubject, name: file.name, type: file.type, size: file.size, createdAt: Date.now() });
+  const meta = { id, subject: printSubject, name: file.name, type: file.type, size: file.size, createdAt: Date.now() };
+  prints.push(meta);
   save(K.prints, prints);
   renderPrints();
   toast(`「${file.name}」を保存しました 📚`);
+
+  // ログイン中ならクラウドにもアップロード(AI問題生成と他端末閲覧に使う)
+  if (cloudUser) {
+    try {
+      await window.Cloud.uploadPrint(id, file, meta);
+    } catch (e) {
+      console.error(e);
+      toast("クラウドへのアップロードに失敗しました(この端末では使えます)");
+    }
+  }
 });
 
 document.getElementById("print-list").addEventListener("click", async (e) => {
   const open = e.target.closest("[data-open-print]");
   if (open) {
     const blob = await idbGet(open.dataset.openPrint);
-    if (!blob) return toast("ファイルが見つかりませんでした");
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return;
+    }
+    // この端末に実ファイルが無い場合はクラウドから開く(別端末でアップしたもの)
+    if (cloudUser) {
+      try {
+        window.open(await window.Cloud.printUrl(open.dataset.openPrint), "_blank");
+      } catch {
+        toast("ファイルが見つかりませんでした");
+      }
+      return;
+    }
+    toast("ファイルが見つかりませんでした");
     return;
   }
   const ai = e.target.closest("[data-ai-print]");
   if (ai) {
-    toast("AI問題生成はオンライン版(Firebase+AI連携)で使えるようになります 🤖");
+    aiGenerate(ai.dataset.aiPrint);
     return;
   }
   const del = e.target.closest("[data-del-print]");
@@ -900,6 +930,7 @@ document.getElementById("print-list").addEventListener("click", async (e) => {
     prints = prints.filter((p) => p.id !== del.dataset.delPrint);
     save(K.prints, prints);
     renderPrints();
+    if (cloudUser) window.Cloud.deletePrint(del.dataset.delPrint).catch(console.error);
   }
 });
 
@@ -1051,6 +1082,8 @@ function renderSettings() {
 
   document.getElementById("s-weekly-goal").value = profile.weeklyGoalHours || "";
 
+  renderAccount();
+
   const nb = document.getElementById("notify-btn");
   if (!("Notification" in window)) {
     nb.disabled = true;
@@ -1189,6 +1222,306 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
     e.target.value = "";
   }
 });
+
+/* =================================================================
+   オンライン同期(Firebase・任意)
+   firebase-config.js が無い場合はこのセクションは何もしない。
+================================================================= */
+function collectState() {
+  return {
+    profile, grades, sessions, assignments, weakpoints, prints, friendCode,
+    savedAt: Number(localStorage.getItem("seiseki.savedAt")) || 0,
+  };
+}
+
+function mergeById(a, b) {
+  const map = new Map();
+  [...(a || []), ...(b || [])].forEach((x) => {
+    if (x && x.id && !map.has(x.id)) map.set(x.id, x);
+  });
+  return [...map.values()];
+}
+
+/* 端末のデータとクラウドのデータを合流させる(記録はID単位で和集合、設定は新しい方) */
+function mergeStates(local, remote) {
+  const remoteNewer = (remote.savedAt || 0) > (local.savedAt || 0);
+  return {
+    profile: remoteNewer && remote.profile ? remote.profile : local.profile,
+    grades: mergeById(local.grades, remote.grades),
+    sessions: mergeById(local.sessions, remote.sessions),
+    assignments: mergeById(local.assignments, remote.assignments),
+    weakpoints: mergeById(local.weakpoints, remote.weakpoints),
+    prints: mergeById(local.prints, remote.prints),
+    friendCode: remote.friendCode || local.friendCode,
+    savedAt: Date.now(),
+  };
+}
+
+function applyState(s) {
+  profile = s.profile || profile;
+  grades = s.grades || [];
+  sessions = s.sessions || [];
+  assignments = s.assignments || [];
+  weakpoints = s.weakpoints || [];
+  prints = s.prints || [];
+  save(K.profile, profile);
+  save(K.grades, grades);
+  save(K.sessions, sessions);
+  save(K.assignments, assignments);
+  save(K.weakpoints, weakpoints);
+  save(K.prints, prints);
+}
+
+/* save()のたびに呼ばれる。ログイン中なら少し待ってからまとめてクラウドへ */
+function scheduleCloudPush() {
+  if (!cloudUser) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    window.Cloud.push(collectState()).catch((e) => console.error("sync push failed", e));
+  }, 1500);
+}
+
+async function cloudSync() {
+  try {
+    const remote = await window.Cloud.pull();
+    if (remote) {
+      applyState(mergeStates(collectState(), remote));
+      populateSubjectSelects();
+      showView(currentView);
+    }
+    await window.Cloud.push(collectState());
+    toast("クラウドと同期しました ☁️");
+  } catch (e) {
+    console.error(e);
+    toast("同期に失敗しました。通信環境を確認してください");
+  }
+}
+
+function authErrorMessage(e) {
+  const code = e?.code || "";
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found"))
+    return "メールアドレスかパスワードがちがいます";
+  if (code.includes("email-already-in-use")) return "このメールアドレスは登録済みです。ログインしてください";
+  if (code.includes("weak-password")) return "パスワードは6文字以上にしてください";
+  if (code.includes("invalid-email")) return "メールアドレスの形式がちがいます";
+  if (code.includes("too-many-requests")) return "しばらく待ってからためしてください";
+  return "ログインに失敗しました";
+}
+
+function renderAccount() {
+  const el = document.getElementById("account-body");
+  if (!el) return;
+  if (cloudState === "loading") {
+    el.innerHTML = `<p class="hint">読みこみ中…</p>`;
+    return;
+  }
+  if (cloudState === "disabled") {
+    el.innerHTML = `<p class="hint">オンライン同期は未設定です。Firebaseプロジェクトを作って firebase-config.js を置くと、ログイン・複数端末の同期・AI問題生成が使えるようになります(READMEを参照)。今はこの端末の中だけにデータが保存されています。</p>`;
+    return;
+  }
+  if (cloudUser) {
+    el.innerHTML = `
+      <p class="hint">ログイン中:<strong>${escapeHtml(cloudUser.email || "")}</strong><br>記録は自動でクラウドに同期されます。</p>
+      <div class="data-actions">
+        <button type="button" class="btn btn-ghost" id="sync-now-btn">いますぐ同期</button>
+        <button type="button" class="btn btn-ghost" id="logout-btn">ログアウト</button>
+      </div>`;
+    document.getElementById("sync-now-btn").addEventListener("click", cloudSync);
+    document.getElementById("logout-btn").addEventListener("click", () => window.Cloud.logout());
+  } else {
+    el.innerHTML = `
+      <div class="form-group"><input type="email" id="acc-email" placeholder="メールアドレス" autocomplete="username" /></div>
+      <div class="form-group"><input type="password" id="acc-pass" placeholder="パスワード(6文字以上)" autocomplete="current-password" /></div>
+      <div class="data-actions">
+        <button type="button" class="btn btn-primary" id="login-btn">ログイン</button>
+        <button type="button" class="btn btn-ghost" id="signup-btn">新規登録</button>
+        <button type="button" class="btn btn-ghost" id="google-btn">Googleでログイン</button>
+      </div>`;
+    const email = () => document.getElementById("acc-email").value.trim();
+    const pass = () => document.getElementById("acc-pass").value;
+    const wrap = (fn) => async () => {
+      try {
+        await fn();
+      } catch (e) {
+        console.error(e);
+        toast(authErrorMessage(e));
+      }
+    };
+    document.getElementById("login-btn").addEventListener("click", wrap(() => window.Cloud.login(email(), pass())));
+    document.getElementById("signup-btn").addEventListener("click", wrap(() => window.Cloud.signup(email(), pass())));
+    document.getElementById("google-btn").addEventListener("click", wrap(() => window.Cloud.loginGoogle()));
+  }
+}
+
+document.addEventListener("cloud-ready", () => {
+  cloudState = "ready";
+  renderAccount();
+  window.Cloud.onAuth((user) => {
+    const loggedIn = !cloudUser && user;
+    cloudUser = user;
+    renderAccount();
+    if (loggedIn) cloudSync();
+  });
+});
+document.addEventListener("cloud-disabled", () => {
+  cloudState = "disabled";
+  renderAccount();
+});
+// モジュールが読みこめない環境(file://直開きなど)へのフォールバック
+setTimeout(() => {
+  if (cloudState === "loading") {
+    cloudState = "disabled";
+    renderAccount();
+  }
+}, 8000);
+
+/* =================================================================
+   AIで問題をつくる(クイズ)
+================================================================= */
+const quizModal = document.getElementById("quiz-modal");
+const quizBody = document.getElementById("quiz-body");
+let quiz = null; // { questions, index, wrong, correct, subject }
+
+document.getElementById("quiz-close-btn").addEventListener("click", closeQuiz);
+function closeQuiz() {
+  quizModal.hidden = true;
+  quizBody.innerHTML = "";
+  quiz = null;
+}
+
+async function aiGenerate(printId) {
+  const meta = prints.find((p) => p.id === printId);
+  if (!meta) return;
+  if (cloudState !== "ready") {
+    toast("AI問題生成にはオンライン設定(firebase-config.js)が必要です");
+    return;
+  }
+  if (!cloudUser) {
+    toast("AI問題生成にはログインが必要です(設定 → アカウント)");
+    showView("settings");
+    return;
+  }
+  quizModal.hidden = false;
+  quizBody.innerHTML = `<p class="empty-note">🤖 プリントを読んで問題をつくっています…<br>(30秒〜1分ほどかかります)</p>`;
+  try {
+    const { questions, remaining } = await window.Cloud.generateQuestions(printId);
+    quiz = { questions, index: 0, wrong: [], correct: 0, subject: meta.subject };
+    renderQuizStep();
+    if (typeof remaining === "number") toast(`きょうはあと${remaining}回つくれます`);
+  } catch (e) {
+    console.error(e);
+    quizBody.innerHTML = `<p class="empty-note">${escapeHtml(e?.message || "生成に失敗しました。少し待ってもう一度ためしてください")}</p>`;
+  }
+}
+
+function renderQuizStep() {
+  if (!quiz) return;
+  const q = quiz.questions[quiz.index];
+  if (!q) return renderQuizResult();
+  const head = `
+    <p class="hint">問題 ${quiz.index + 1} / ${quiz.questions.length} ・ AIが作った問題はまちがっていることがあります</p>
+    <div class="quiz-question">${escapeHtml(q.question)}</div>`;
+  if (q.type === "choice") {
+    quizBody.innerHTML =
+      head +
+      `<div class="quiz-choices">${q.choices
+        .map((c, i) => `<button type="button" class="quiz-choice" data-choice="${i}">${escapeHtml(c)}</button>`)
+        .join("")}</div>`;
+    quizBody.querySelectorAll(".quiz-choice").forEach((b) =>
+      b.addEventListener("click", () => answerChoice(Number(b.dataset.choice)))
+    );
+  } else {
+    quizBody.innerHTML =
+      head +
+      `<textarea id="quiz-written" rows="3" placeholder="答えを書いてみよう(自己採点です)"></textarea>
+       <div class="form-actions"><button type="button" class="btn btn-primary" id="quiz-show-answer">答えを見る</button></div>`;
+    document.getElementById("quiz-show-answer").addEventListener("click", showWrittenAnswer);
+  }
+}
+
+function answerChoice(i) {
+  const q = quiz.questions[quiz.index];
+  const ok = i === q.answer_index;
+  quizBody.querySelectorAll(".quiz-choice").forEach((b, bi) => {
+    b.disabled = true;
+    if (bi === q.answer_index) b.classList.add("correct");
+    else if (bi === i) b.classList.add("wrong");
+  });
+  if (ok) quiz.correct++;
+  else recordWrong(q);
+  quizBody.insertAdjacentHTML(
+    "beforeend",
+    `<div class="quiz-feedback ${ok ? "ok" : "ng"}">
+       <strong>${ok ? "⭕ 正解!" : "❌ ざんねん…"}</strong>
+       <div class="quiz-explanation">${escapeHtml(q.explanation || "")}</div>
+     </div>
+     <div class="form-actions"><button type="button" class="btn btn-primary" id="quiz-next">${
+       quiz.index + 1 < quiz.questions.length ? "次の問題へ" : "結果を見る"
+     }</button></div>`
+  );
+  document.getElementById("quiz-next").addEventListener("click", () => {
+    quiz.index++;
+    renderQuizStep();
+  });
+}
+
+function showWrittenAnswer() {
+  const q = quiz.questions[quiz.index];
+  document.getElementById("quiz-show-answer").closest(".form-actions").remove();
+  quizBody.insertAdjacentHTML(
+    "beforeend",
+    `<div class="quiz-feedback ok">
+       <strong>模範解答:</strong>${escapeHtml(q.model_answer || "")}
+       <div class="quiz-explanation">${escapeHtml(q.explanation || "")}</div>
+     </div>
+     <p class="hint">自分の答えと見くらべて、自己採点しよう</p>
+     <div class="form-actions">
+       <button type="button" class="btn btn-primary" id="quiz-self-ok">できた ⭕</button>
+       <button type="button" class="btn btn-ghost" id="quiz-self-ng">できなかった ❌</button>
+     </div>`
+  );
+  document.getElementById("quiz-self-ok").addEventListener("click", () => {
+    quiz.correct++;
+    quiz.index++;
+    renderQuizStep();
+  });
+  document.getElementById("quiz-self-ng").addEventListener("click", () => {
+    recordWrong(quiz.questions[quiz.index]);
+    quiz.index++;
+    renderQuizStep();
+  });
+}
+
+/* まちがえた問題を弱点ノートに自動保存する */
+function recordWrong(q) {
+  quiz.wrong.push(q);
+  weakpoints.push({
+    id: uid(),
+    subject: quiz.subject || profile.subjects[0] || "その他",
+    question: q.question,
+    answer:
+      (q.type === "choice" ? `正解: ${q.choices[q.answer_index]}\n` : `模範解答: ${q.model_answer}\n`) +
+      (q.explanation || ""),
+    mastered: false,
+    createdAt: Date.now(),
+  });
+  save(K.weakpoints, weakpoints);
+}
+
+function renderQuizResult() {
+  const total = quiz.questions.length;
+  quizBody.innerHTML = `
+    <div class="quiz-result">
+      <div class="quiz-score">${quiz.correct} / ${total} 問正解!</div>
+      ${
+        quiz.wrong.length > 0
+          ? `<p class="hint">まちがえた${quiz.wrong.length}問を弱点ノートに保存しました 📕 あとで復習しよう!</p>`
+          : `<p class="hint">全問正解!すばらしい! 🎉</p>`
+      }
+      <div class="form-actions"><button type="button" class="btn btn-primary" id="quiz-done">とじる</button></div>
+    </div>`;
+  document.getElementById("quiz-done").addEventListener("click", closeQuiz);
+}
 
 /* ================= 初期化 ================= */
 populateSubjectSelects();
