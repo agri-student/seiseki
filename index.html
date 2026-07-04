@@ -3,58 +3,81 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="生徒が毎日の学習を記録できるアプリ" />
-  <title>まなびログ – 学習記録</title>
+  <meta name="description" content="成績管理・学習支援アプリ" />
+  <title>Seiseki|成績管理・学習支援</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📖</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
 </head>
 <body>
-  <header class="app-header">
-    <h1 class="app-title">📖 まなびログ</h1>
-    <p class="app-subtitle">きょうの学習を記録しよう</p>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="hero-label" id="hero-label"></div>
+      <h1 class="hero-title" id="hero-title"></h1>
+    </div>
   </header>
 
   <main id="main">
-    <!-- ホーム(ダッシュボード) -->
-    <section id="view-home" class="view" aria-labelledby="tab-home">
+    <!-- ホーム -->
+    <section id="view-home" class="view">
       <div class="stat-row">
         <div class="stat-tile">
-          <div class="stat-label">今日の学習時間</div>
-          <div class="stat-value" id="stat-today">0<span class="stat-unit">分</span></div>
+          <div class="stat-label">今週の勉強</div>
+          <div class="stat-value" id="stat-week-hours">0.0<span class="stat-unit">h</span></div>
         </div>
         <div class="stat-tile">
-          <div class="stat-label">今週の合計</div>
-          <div class="stat-value" id="stat-week">0<span class="stat-unit">分</span></div>
+          <div class="stat-label">次の提出物</div>
+          <div class="stat-value stat-small" id="stat-next-due">なし</div>
         </div>
         <div class="stat-tile">
-          <div class="stat-label">連続記録</div>
-          <div class="stat-value" id="stat-streak">0<span class="stat-unit">日</span></div>
+          <div class="stat-label">目標達成</div>
+          <div class="stat-value stat-small" id="stat-goal">—</div>
         </div>
       </div>
 
       <div class="card">
-        <h2 class="card-title">この1週間の学習時間</h2>
-        <div id="week-chart" class="week-chart" role="img" aria-label="この1週間の学習時間の棒グラフ"></div>
-        <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+        <h2 class="card-title">🎯 進路アドバイス</h2>
+        <div id="career-advice" class="advice-body"></div>
       </div>
 
       <div class="card">
-        <h2 class="card-title">今週の教科別学習時間</h2>
-        <div id="subject-breakdown" class="subject-breakdown"></div>
+        <h2 class="card-title">得意・不得意レーダー</h2>
+        <div id="radar-chart" class="chart-wrap"></div>
       </div>
 
+      <div class="chip-row" id="home-subject-chips"></div>
+
       <div class="card">
-        <h2 class="card-title">最近の記録</h2>
-        <div id="recent-records"></div>
+        <h2 class="card-title" id="trend-title">成績推移(得点率)</h2>
+        <div id="trend-chart" class="chart-wrap"></div>
+      </div>
+
+      <div class="center-btn-row">
+        <button type="button" class="btn btn-coral" id="add-grade-btn">+ 成績を追加</button>
+      </div>
+
+      <div class="card" id="grade-list-card">
+        <h2 class="card-title">登録した成績</h2>
+        <div id="grade-list"></div>
       </div>
     </section>
 
-    <!-- 記録する -->
-    <section id="view-add" class="view" hidden aria-labelledby="tab-add">
+    <!-- 学習 -->
+    <section id="view-study" class="view" hidden>
       <div class="card">
-        <h2 class="card-title" id="form-title">学習を記録する</h2>
+        <h2 class="card-title">⏱ 学習タイマー</h2>
+        <div class="chip-row chip-row-tight" id="timer-subject-chips"></div>
+        <div class="timer-display" id="timer-display">00:00</div>
+        <div class="timer-actions">
+          <button type="button" class="btn btn-primary" id="timer-start">スタート</button>
+          <button type="button" class="btn btn-ghost" id="timer-pause" hidden>一時停止</button>
+          <button type="button" class="btn btn-coral" id="timer-stop" hidden>終了して記録</button>
+        </div>
+        <p class="hint" id="timer-hint">教科を選んでスタート!勉強時間が自動で記録されます。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title" id="form-title">✏️ 学習を記録する</h2>
         <form id="record-form">
-          <input type="hidden" id="f-id" />
           <div class="form-group">
             <label for="f-date">日付</label>
             <input type="date" id="f-date" required />
@@ -65,7 +88,7 @@
           </div>
           <div class="form-group">
             <label for="f-content">学習した内容</label>
-            <input type="text" id="f-content" placeholder="例:漢字ドリル p.12〜15" required maxlength="100" />
+            <input type="text" id="f-content" placeholder="例:古文の音読、数学の問題集 p.12〜15" required maxlength="100" />
           </div>
           <div class="form-group">
             <label for="f-minutes">学習時間(分)</label>
@@ -91,7 +114,7 @@
           </div>
           <div class="form-group">
             <label for="f-memo">ふりかえり・メモ(任意)</label>
-            <textarea id="f-memo" rows="3" placeholder="むずかしかったこと、次にがんばりたいことなど" maxlength="500"></textarea>
+            <textarea id="f-memo" rows="2" placeholder="むずかしかったこと、次にがんばりたいことなど" maxlength="500"></textarea>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" id="save-btn">記録する</button>
@@ -99,62 +122,218 @@
           </div>
         </form>
       </div>
-    </section>
 
-    <!-- 一覧 -->
-    <section id="view-list" class="view" hidden aria-labelledby="tab-list">
-      <div class="list-controls">
+      <div class="card">
+        <h2 class="card-title">📌 提出物・課題</h2>
+        <div id="assignment-list"></div>
+        <form id="assignment-form" class="inline-form">
+          <input type="text" id="a-title" placeholder="提出物の名前(例:数学ワーク)" maxlength="50" required />
+          <div class="inline-form-row">
+            <input type="date" id="a-due" required aria-label="提出期限" />
+            <button type="submit" class="btn btn-primary btn-sm">追加</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">📋 学習の記録</h2>
         <select id="filter-subject" aria-label="教科でしぼりこむ">
           <option value="">すべての教科</option>
         </select>
-        <select id="filter-period" aria-label="期間でしぼりこむ">
-          <option value="all">すべての期間</option>
-          <option value="week">今週</option>
-          <option value="month">今月</option>
-        </select>
+        <div id="record-list"></div>
       </div>
-      <div id="record-list"></div>
     </section>
 
-    <!-- 設定 -->
-    <section id="view-settings" class="view" hidden aria-labelledby="tab-settings">
+    <!-- プリント -->
+    <section id="view-prints" class="view" hidden>
+      <div class="chip-row" id="print-subject-chips"></div>
       <div class="card">
-        <h2 class="card-title">教科の管理</h2>
-        <ul id="subject-list" class="subject-list"></ul>
-        <form id="subject-form" class="subject-form">
-          <input type="text" id="new-subject" placeholder="新しい教科名" maxlength="20" required />
-          <button type="submit" class="btn btn-primary">追加</button>
+        <label class="dropzone" for="print-file">
+          <span class="dropzone-icon">⬆️</span>
+          <span class="dropzone-title" id="dropzone-title">プリントを追加</span>
+          <span class="dropzone-sub">画像・PDF / 最大20MB</span>
+          <input type="file" id="print-file" accept="image/*,application/pdf" hidden />
+        </label>
+      </div>
+      <div class="card">
+        <h2 class="card-title" id="print-list-title">資料</h2>
+        <div id="print-list"></div>
+      </div>
+      <p class="tip">💡 各資料の「AIで問題をつくる」から、プリントを参照した模擬問題(選択+記述)を生成できます。</p>
+    </section>
+
+    <!-- 弱点 -->
+    <section id="view-weak" class="view" hidden>
+      <div class="card">
+        <div id="weak-list"></div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">弱点を追加する</h2>
+        <form id="weak-form">
+          <div class="form-group">
+            <label for="w-subject">教科</label>
+            <select id="w-subject" required></select>
+          </div>
+          <div class="form-group">
+            <label for="w-question">間違えた問題・ニガテなこと</label>
+            <textarea id="w-question" rows="2" required maxlength="300" placeholder="例:二次関数の最大・最小の場合分け"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="w-answer">答え・ポイント(任意)</label>
+            <textarea id="w-answer" rows="2" maxlength="300" placeholder="例:軸の位置で3パターンに分ける"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">保存する</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- フレンド -->
+    <section id="view-friends" class="view" hidden>
+      <div class="card">
+        <h2 class="card-title">あなたのフレンドコード</h2>
+        <div class="friend-code-row">
+          <span class="friend-code" id="friend-code"></span>
+          <button type="button" class="chip-btn" id="copy-code-btn">コピー</button>
+        </div>
+        <form id="friend-form" class="inline-form-row">
+          <input type="text" id="friend-input" placeholder="フレンドのコードを入力" maxlength="10" />
+          <button type="submit" class="btn btn-primary btn-sm">申請</button>
         </form>
       </div>
       <div class="card">
-        <h2 class="card-title">目標</h2>
-        <div class="form-group">
-          <label for="goal-minutes">1日の目標学習時間(分)</label>
-          <input type="number" id="goal-minutes" min="0" max="720" step="5" />
-        </div>
+        <h2 class="card-title">今週の勉強時間ランキング</h2>
+        <p class="hint">あなた+フレンド・月曜始まり</p>
+        <div id="ranking"></div>
       </div>
+    </section>
+
+    <!-- 設定 -->
+    <section id="view-settings" class="view" hidden>
+      <div class="card">
+        <h2 class="card-title">表示名</h2>
+        <div class="inline-form-row">
+          <input type="text" id="s-name" maxlength="20" placeholder="表示名" />
+          <button type="button" class="btn btn-primary btn-sm" id="save-name-btn">保存</button>
+        </div>
+        <p class="hint">フレンドのランキングに表示される名前です。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">学校</h2>
+        <div class="seg-row" id="school-seg"></div>
+        <p class="hint">学校を変えると、学年と科目がその学校の初期設定に切り替わります。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">学年</h2>
+        <div class="seg-row" id="grade-seg"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title-row">
+          <h2 class="card-title">科目</h2>
+          <button type="button" class="link-btn" id="reset-subjects-btn">初期設定に戻す</button>
+        </div>
+        <div class="subject-chip-wrap" id="subject-chips"></div>
+        <form id="subject-form" class="inline-form-row">
+          <input type="text" id="new-subject" placeholder="科目を追加(例: 物理)" maxlength="20" required />
+          <button type="submit" class="btn btn-primary btn-sm">追加</button>
+        </form>
+        <p class="hint">ここで編集した科目が、成績入力・グラフ・プリントに反映されます。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">進路目標</h2>
+        <div class="chip-row chip-row-tight" id="career-type-chips"></div>
+        <div class="form-group">
+          <input type="text" id="career-target" maxlength="50" placeholder="志望先(例: ○○高校 / ○○大学)" />
+        </div>
+        <div class="form-group">
+          <input type="text" id="career-note" maxlength="100" placeholder="補足(任意:得意にしたい科目・目標偏差値など)" />
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="save-career-btn">進路目標を保存</button>
+        <p class="hint">ホームの「進路アドバイス」で、目標に向けた助言を出します。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">週の目標勉強時間</h2>
+        <div class="inline-form-row">
+          <input type="number" id="s-weekly-goal" min="0" max="80" step="0.5" placeholder="例: 10" />
+          <span class="unit-label">時間/週</span>
+        </div>
+        <p class="hint">ホームの「目標達成」に達成率が表示されます。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">通知</h2>
+        <p class="hint">提出物の期限が近づいたら、端末に通知でお知らせします。</p>
+        <button type="button" class="btn btn-primary btn-block" id="notify-btn">🔔 通知をオンにする</button>
+      </div>
+
       <div class="card">
         <h2 class="card-title">データ</h2>
+        <p class="hint">データはこの端末のブラウザに保存されます。端末をかえるときは書き出し・読み込みを使ってください。</p>
         <div class="data-actions">
           <button type="button" class="btn btn-ghost" id="export-btn">データを書き出す(JSON)</button>
           <label class="btn btn-ghost" for="import-file">データを読み込む
             <input type="file" id="import-file" accept="application/json" hidden />
           </label>
         </div>
-        <p class="data-note">データはこの端末のブラウザにだけ保存されます。端末をかえるときは書き出し・読み込みを使ってください。</p>
       </div>
     </section>
   </main>
+
+  <!-- 成績追加モーダル -->
+  <div class="modal-overlay" id="grade-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="grade-modal-title">
+      <h2 class="card-title" id="grade-modal-title">成績を追加</h2>
+      <form id="grade-form">
+        <div class="form-group">
+          <label for="g-subject">科目</label>
+          <select id="g-subject" required></select>
+        </div>
+        <div class="form-group">
+          <label for="g-title">テスト名</label>
+          <input type="text" id="g-title" required maxlength="40" placeholder="例:1学期中間テスト" />
+        </div>
+        <div class="form-group">
+          <label for="g-date">日付</label>
+          <input type="date" id="g-date" required />
+        </div>
+        <div class="form-group score-row">
+          <div>
+            <label for="g-score">点数</label>
+            <input type="number" id="g-score" min="0" required placeholder="80" />
+          </div>
+          <span class="score-slash">/</span>
+          <div>
+            <label for="g-max">満点</label>
+            <input type="number" id="g-max" min="1" required value="100" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">保存する</button>
+          <button type="button" class="btn btn-ghost" id="grade-cancel-btn">キャンセル</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <nav class="tab-bar" role="tablist" aria-label="画面切りかえ">
     <button class="tab active" id="tab-home" role="tab" aria-selected="true" data-view="home">
       <span class="tab-icon">🏠</span><span class="tab-text">ホーム</span>
     </button>
-    <button class="tab" id="tab-add" role="tab" aria-selected="false" data-view="add">
-      <span class="tab-icon">✏️</span><span class="tab-text">記録する</span>
+    <button class="tab" id="tab-study" role="tab" aria-selected="false" data-view="study">
+      <span class="tab-icon">⏱️</span><span class="tab-text">学習</span>
     </button>
-    <button class="tab" id="tab-list" role="tab" aria-selected="false" data-view="list">
-      <span class="tab-icon">📋</span><span class="tab-text">一覧</span>
+    <button class="tab" id="tab-prints" role="tab" aria-selected="false" data-view="prints">
+      <span class="tab-icon">📚</span><span class="tab-text">プリント</span>
+    </button>
+    <button class="tab" id="tab-weak" role="tab" aria-selected="false" data-view="weak">
+      <span class="tab-icon">📕</span><span class="tab-text">弱点</span>
+    </button>
+    <button class="tab" id="tab-friends" role="tab" aria-selected="false" data-view="friends">
+      <span class="tab-icon">👥</span><span class="tab-text">フレンド</span>
     </button>
     <button class="tab" id="tab-settings" role="tab" aria-selected="false" data-view="settings">
       <span class="tab-icon">⚙️</span><span class="tab-text">設定</span>
