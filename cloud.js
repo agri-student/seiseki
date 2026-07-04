@@ -16,19 +16,17 @@ async function init() {
     return;
   }
 
-  const [appMod, authMod, fsMod, stMod, fnMod] = await Promise.all([
+  const [appMod, authMod, fsMod, stMod] = await Promise.all([
     import(`${FB}/firebase-app.js`),
     import(`${FB}/firebase-auth.js`),
     import(`${FB}/firebase-firestore.js`),
     import(`${FB}/firebase-storage.js`),
-    import(`${FB}/firebase-functions.js`),
   ]);
 
   const app = appMod.initializeApp(config);
   const auth = authMod.getAuth(app);
   const db = fsMod.getFirestore(app);
   const storage = stMod.getStorage(app);
-  const functions = fnMod.getFunctions(app, "asia-northeast1");
 
   const userDoc = (uid) => fsMod.doc(db, "users", uid);
   const printDoc = (uid, id) => fsMod.doc(db, "users", uid, "prints", id);
@@ -89,13 +87,6 @@ async function init() {
     /** 別端末など、ローカルに実ファイルが無いときの閲覧用URL */
     async printUrl(id) {
       return stMod.getDownloadURL(printRef(auth.currentUser.uid, id));
-    },
-
-    /** Cloud FunctionsのAI問題生成を呼ぶ */
-    async generateQuestions(printId) {
-      const call = fnMod.httpsCallable(functions, "generateQuestions", { timeout: 300000 });
-      const result = await call({ printId });
-      return result.data; // { questions, remaining }
     },
   };
 

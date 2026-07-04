@@ -1,0 +1,17 @@
+{
+  "name": "Seiseki - 成績管理・学習支援",
+  "short_name": "Seiseki",
+  "description": "学習の記録・成績の管理・弱点の克服をひとつで",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eaf5fe",
+  "theme_color": "#4499e9",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

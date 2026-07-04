@@ -8,7 +8,6 @@ const SCHOOLS = {
 };
 const CAREER_TYPES = { exam: "高校入試", univ: "大学進学", college: "専門・短大", job: "就職" };
 const CAT_COLORS = ["--cat-1", "--cat-2", "--cat-3", "--cat-4", "--cat-5", "--cat-6", "--cat-7", "--cat-8"];
-const RATING_EMOJI = { 1: "😰", 2: "😕", 3: "🙂", 4: "😄", 5: "🤩" };
 const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 /* ================= データ層(localStorage) ================= */
@@ -23,6 +22,8 @@ const K = {
   timer: "seiseki.timer",
   notified: "seiseki.notifiedOn",
   byok: "seiseki.byok", // 個人APIキー(この端末のみ・同期/書き出し対象外)
+  quizzes: "seiseki.quizzes",
+  cards: "seiseki.cards",
 };
 
 /* オンライン同期の状態(実装はファイル後半。save()から参照されるためここで宣言) */
@@ -63,6 +64,8 @@ let sessions = load(K.sessions, []);      // {id, date, subject, seconds, conten
 let assignments = load(K.assignments, []); // {id, title, due, done}
 let weakpoints = load(K.weakpoints, []);  // {id, subject, question, answer, mastered, createdAt}
 let prints = load(K.prints, []);          // {id, subject, name, type, size, createdAt}
+let quizzes = load(K.quizzes, []);        // 保存ずみAI問題セット {id, title, subject, questions, createdAt, attempts, best}
+let cards = load(K.cards, []);            // 鑑定カード {id, subject, name, note, createdAt}(写真はIndexedDB: card-<id>)
 
 /* 旧バージョン(まなびログ)からの引きこし */
 (function migrate() {
@@ -504,7 +507,6 @@ document.getElementById("grade-form").addEventListener("submit", (e) => {
 let timer = load(K.timer, { running: false, startedAt: 0, accumSec: 0, subject: "" });
 let timerInterval = null;
 let editingId = null;
-let selectedRating = 0;
 
 function timerSeconds() {
   return timer.accumSec + (timer.running ? Math.floor((Date.now() - timer.startedAt) / 1000) : 0);
@@ -578,35 +580,22 @@ document.getElementById("timer-stop").addEventListener("click", () => {
 
 /* 手動の学習記録フォーム */
 const form = document.getElementById("record-form");
-const ratingRow = document.getElementById("f-rating");
 
 function populateSubjectSelects() {
   const opts = profile.subjects.map((s) => `<option>${escapeHtml(s)}</option>`).join("");
   document.getElementById("f-subject").innerHTML = opts;
   document.getElementById("w-subject").innerHTML = opts;
+  document.getElementById("c-subject").innerHTML = opts;
   document.getElementById("filter-subject").innerHTML = `<option value="">すべての教科</option>` + opts;
 }
 function resetForm() {
   editingId = null;
   form.reset();
   document.getElementById("f-date").value = todayStr();
-  setRating(0);
   document.getElementById("form-title").textContent = "✏️ 学習を記録する";
   document.getElementById("save-btn").textContent = "記録する";
   document.getElementById("cancel-edit-btn").hidden = true;
 }
-function setRating(val) {
-  selectedRating = val;
-  ratingRow.querySelectorAll(".rating-btn").forEach((b) => {
-    b.classList.toggle("selected", Number(b.dataset.val) === val);
-  });
-}
-ratingRow.addEventListener("click", (e) => {
-  const btn = e.target.closest(".rating-btn");
-  if (!btn) return;
-  const val = Number(btn.dataset.val);
-  setRating(val === selectedRating ? 0 : val);
-});
 document.querySelectorAll(".preset-btn").forEach((b) => {
   b.addEventListener("click", () => (document.getElementById("f-minutes").value = b.dataset.min));
 });
@@ -622,7 +611,7 @@ form.addEventListener("submit", (e) => {
     subject: document.getElementById("f-subject").value,
     content: document.getElementById("f-content").value.trim(),
     seconds: minutes * 60,
-    rating: selectedRating,
+    rating: 0,
     memo: document.getElementById("f-memo").value.trim(),
     createdAt: base ? base.createdAt : Date.now(),
   };
@@ -648,7 +637,6 @@ function startEdit(id) {
   document.getElementById("f-content").value = r.content;
   document.getElementById("f-minutes").value = Math.max(1, Math.round(r.seconds / 60));
   document.getElementById("f-memo").value = r.memo || "";
-  setRating(r.rating || 0);
   document.getElementById("form-title").textContent = "✏️ 記録を編集する";
   document.getElementById("save-btn").textContent = "更新する";
   document.getElementById("cancel-edit-btn").hidden = false;
@@ -741,7 +729,6 @@ function renderRecordList() {
               <div class="rec-top">
                 <span class="rec-subject">${escapeHtml(r.subject)}</span>
                 <span class="rec-minutes">${formatDuration(r.seconds)}</span>
-                ${r.rating ? `<span class="rec-rating">${RATING_EMOJI[r.rating]}</span>` : ""}
               </div>
               <div class="rec-content">${escapeHtml(r.content)}</div>
               ${r.memo ? `<div class="rec-memo">${escapeHtml(r.memo)}</div>` : ""}
@@ -833,6 +820,7 @@ function renderPrints() {
   });
   document.getElementById("dropzone-title").textContent = `${printSubject || ""}のプリントを追加`;
   document.getElementById("print-list-title").textContent = `${printSubject || ""}の資料`;
+  renderQuizSets();
 
   const list = prints
     .filter((p) => p.subject === printSubject)
@@ -939,6 +927,7 @@ document.getElementById("print-list").addEventListener("click", async (e) => {
    弱点ノート
 ================================================================= */
 function renderWeak() {
+  renderCards();
   const el = document.getElementById("weak-list");
   const list = [...weakpoints].sort((a, b) => a.mastered - b.mastered || b.createdAt - a.createdAt);
   if (list.length === 0) {
@@ -1261,7 +1250,7 @@ document.getElementById("import-file").addEventListener("change", async (e) => {
 ================================================================= */
 function collectState() {
   return {
-    profile, grades, sessions, assignments, weakpoints, prints, friendCode,
+    profile, grades, sessions, assignments, weakpoints, prints, quizzes, cards, friendCode,
     savedAt: Number(localStorage.getItem("seiseki.savedAt")) || 0,
   };
 }
@@ -1284,6 +1273,8 @@ function mergeStates(local, remote) {
     assignments: mergeById(local.assignments, remote.assignments),
     weakpoints: mergeById(local.weakpoints, remote.weakpoints),
     prints: mergeById(local.prints, remote.prints),
+    quizzes: mergeById(local.quizzes, remote.quizzes),
+    cards: mergeById(local.cards, remote.cards),
     friendCode: remote.friendCode || local.friendCode,
     savedAt: Date.now(),
   };
@@ -1296,12 +1287,16 @@ function applyState(s) {
   assignments = s.assignments || [];
   weakpoints = s.weakpoints || [];
   prints = s.prints || [];
+  quizzes = s.quizzes || [];
+  cards = s.cards || [];
   save(K.profile, profile);
   save(K.grades, grades);
   save(K.sessions, sessions);
   save(K.assignments, assignments);
   save(K.weakpoints, weakpoints);
   save(K.prints, prints);
+  save(K.quizzes, quizzes);
+  save(K.cards, cards);
 }
 
 /* save()のたびに呼ばれる。ログイン中なら少し待ってからまとめてクラウドへ */
@@ -1348,7 +1343,7 @@ function renderAccount() {
     return;
   }
   if (cloudState === "disabled") {
-    el.innerHTML = `<p class="hint">オンライン同期は未設定です。Firebaseプロジェクトを作って firebase-config.js を置くと、ログイン・複数端末の同期・AI問題生成が使えるようになります(READMEを参照)。今はこの端末の中だけにデータが保存されています。</p>`;
+    el.innerHTML = `<p class="hint">オンライン同期は未設定です。Firebaseプロジェクトを作って firebase-config.js を置くと、ログインと複数端末の同期が使えるようになります(READMEを参照)。今はこの端末の中だけにデータが保存されています。</p>`;
     return;
   }
   if (cloudUser) {
@@ -1412,56 +1407,36 @@ setTimeout(() => {
 ================================================================= */
 const quizModal = document.getElementById("quiz-modal");
 const quizBody = document.getElementById("quiz-body");
-let quiz = null; // { questions, index, wrong, correct, subject }
+let quiz = null;  // AIクイズ { setId, questions, index, wrong, correct, subject }
+let flash = null; // フラッシュカード/鑑定 { mode, items, index, ok }
 
 document.getElementById("quiz-close-btn").addEventListener("click", closeQuiz);
 function closeQuiz() {
   quizModal.hidden = true;
   quizBody.innerHTML = "";
   quiz = null;
+  flash = null;
 }
 
 async function aiGenerate(printId) {
   const meta = prints.find((p) => p.id === printId);
   if (!meta) return;
 
-  // 1) 自分のAPIキー(BYOK)が登録されていれば、それを優先して端末から直接生成
+  // AI問題生成は自分のAPIキー(BYOK)で行う
   const byok = load(K.byok, null);
-  if (byok?.provider && byok?.apiKey) {
-    return aiGenerateWithOwnKey(meta, byok);
-  }
-
-  // 2) 学校のサーバー(Cloud Functions)経由
-  if (cloudState !== "ready") {
-    toast("AI問題生成には、学校のオンライン設定(firebase-config.js)か、自分のAPIキー(設定 → 自分のAIキー)が必要です");
-    return;
-  }
-  if (!cloudUser) {
-    toast("AI問題生成にはログインが必要です(設定 → アカウント)");
+  if (!byok?.provider || !byok?.apiKey) {
+    toast("AI問題生成には自分のAPIキーが必要です(設定 → 自分のAIキーで問題をつくる)");
     showView("settings");
     return;
   }
-  quizModal.hidden = false;
-  quizBody.innerHTML = `<p class="empty-note">🤖 プリントを読んで問題をつくっています…<br>(30秒〜1分ほどかかります)</p>`;
-  try {
-    const { questions, remaining } = await window.Cloud.generateQuestions(printId);
-    quiz = { questions, index: 0, wrong: [], correct: 0, subject: meta.subject };
-    renderQuizStep();
-    if (typeof remaining === "number") toast(`きょうはあと${remaining}回つくれます`);
-  } catch (e) {
-    console.error(e);
-    quizBody.innerHTML = `<p class="empty-note">${escapeHtml(e?.message || "生成に失敗しました。少し待ってもう一度ためしてください")}</p>`;
-  }
-}
 
-/* 自分のAPIキーで、この端末からAI各社へ直接リクエストして生成する */
-async function aiGenerateWithOwnKey(meta, byok) {
   const blob = await idbGet(meta.id);
   if (!blob) {
     toast("この端末にファイルの実体がありません。アップロードした端末で使うか、もう一度アップロードしてください");
     return;
   }
   quizModal.hidden = false;
+  document.getElementById("quiz-title").textContent = "AIで問題をつくる";
   quizBody.innerHTML = `<p class="empty-note">🔑 自分のキー(${escapeHtml(
     window.BYOK.PROVIDER_LABELS[byok.provider] || byok.provider
   )})で問題をつくっています…<br>(30秒〜1分ほどかかります)</p>`;
@@ -1474,13 +1449,80 @@ async function aiGenerateWithOwnKey(meta, byok) {
       mimeType: meta.type,
       subject: meta.subject,
     });
-    quiz = { questions, index: 0, wrong: [], correct: 0, subject: meta.subject };
-    renderQuizStep();
+    // 生成した問題セットは保存して、何度でも解きなおせるようにする
+    const set = {
+      id: uid(),
+      title: meta.name,
+      subject: meta.subject,
+      questions,
+      createdAt: Date.now(),
+      attempts: 0,
+      best: null,
+    };
+    quizzes.push(set);
+    save(K.quizzes, quizzes);
+    renderQuizSets();
+    startQuizSet(set);
   } catch (e) {
     console.error(e);
     quizBody.innerHTML = `<p class="empty-note">${escapeHtml(e?.message || "生成に失敗しました")}</p>`;
   }
 }
+
+/* ---- 保存ずみ問題セット ---- */
+function startQuizSet(set) {
+  quiz = { setId: set.id, questions: set.questions, index: 0, wrong: [], correct: 0, subject: set.subject };
+  quizModal.hidden = false;
+  document.getElementById("quiz-title").textContent = `📝 ${set.title}`;
+  renderQuizStep();
+}
+
+function renderQuizSets() {
+  const el = document.getElementById("quizset-list");
+  if (!el) return;
+  document.getElementById("quizset-title").textContent = `${printSubject || ""}の保存ずみ問題セット`;
+  const list = quizzes
+    .filter((s) => s.subject === printSubject)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  if (list.length === 0) {
+    el.innerHTML = `<p class="empty-note">「AIで問題をつくる」で生成すると、ここに保存されて何度でも解きなおせます</p>`;
+    return;
+  }
+  el.innerHTML = list
+    .map(
+      (s) => `
+      <div class="print-item">
+        <span class="print-icon">📝</span>
+        <div class="print-info">
+          <div class="print-name">${escapeHtml(s.title)}</div>
+          <div class="print-meta">${s.questions.length}問・挑戦${s.attempts || 0}回${
+        s.best != null ? `・ベスト ${s.best}/${s.questions.length}` : ""
+      }</div>
+        </div>
+        <div class="print-actions">
+          <button class="chip-btn" data-play-quiz="${s.id}">解く</button>
+          <button class="icon-btn" data-del-quiz="${s.id}" aria-label="削除">🗑️</button>
+        </div>
+      </div>`
+    )
+    .join("");
+}
+
+document.getElementById("quizset-list").addEventListener("click", (e) => {
+  const play = e.target.closest("[data-play-quiz]");
+  if (play) {
+    const set = quizzes.find((s) => s.id === play.dataset.playQuiz);
+    if (set) startQuizSet(set);
+    return;
+  }
+  const del = e.target.closest("[data-del-quiz]");
+  if (del) {
+    if (!confirm("この問題セットを削除しますか?")) return;
+    quizzes = quizzes.filter((s) => s.id !== del.dataset.delQuiz);
+    save(K.quizzes, quizzes);
+    renderQuizSets();
+  }
+});
 
 function renderQuizStep() {
   if (!quiz) return;
@@ -1578,6 +1620,14 @@ function recordWrong(q) {
 
 function renderQuizResult() {
   const total = quiz.questions.length;
+  // 保存ずみセットの挑戦回数・ベストスコアを更新
+  const set = quizzes.find((s) => s.id === quiz.setId);
+  if (set) {
+    set.attempts = (set.attempts || 0) + 1;
+    set.best = Math.max(set.best ?? 0, quiz.correct);
+    save(K.quizzes, quizzes);
+    renderQuizSets();
+  }
   quizBody.innerHTML = `
     <div class="quiz-result">
       <div class="quiz-score">${quiz.correct} / ${total} 問正解!</div>
@@ -1591,8 +1641,209 @@ function renderQuizResult() {
   document.getElementById("quiz-done").addEventListener("click", closeQuiz);
 }
 
+/* =================================================================
+   フラッシュカード(弱点の復習)と 鑑定モード(写真で暗記)
+================================================================= */
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+document.getElementById("flashcard-btn").addEventListener("click", () => {
+  const items = weakpoints.filter((w) => !w.mastered);
+  if (items.length === 0) {
+    toast("復習する弱点がありません。全部克服ずみ! 🎉");
+    return;
+  }
+  startFlash({ mode: "weak", title: "📇 フラッシュカード", items: shuffle(items) });
+});
+
+document.getElementById("kantei-start-btn").addEventListener("click", () => {
+  if (cards.length === 0) {
+    toast("鑑定カードがまだありません。下のフォームから追加しよう");
+    return;
+  }
+  startFlash({ mode: "kantei", title: "🔍 鑑定モード", items: shuffle(cards) });
+});
+
+function startFlash(cfg) {
+  flash = { ...cfg, index: 0, ok: 0 };
+  quizModal.hidden = false;
+  document.getElementById("quiz-title").textContent = cfg.title;
+  renderFlashStep();
+}
+
+async function renderFlashStep() {
+  if (!flash) return;
+  const item = flash.items[flash.index];
+  if (!item) return renderFlashResult();
+  const head = `<p class="hint">${flash.index + 1} / ${flash.items.length}</p>`;
+  if (flash.mode === "weak") {
+    quizBody.innerHTML =
+      head +
+      `<div class="flash-subject">${escapeHtml(item.subject)}</div>
+       <div class="quiz-question">${escapeHtml(item.question)}</div>
+       <div class="form-actions"><button type="button" class="btn btn-primary" id="flash-reveal">答え・ポイントを見る</button></div>`;
+  } else {
+    const blob = await idbGet(`card-${item.id}`);
+    if (!flash) return; // 読み込み中にとじられた場合
+    const img = blob
+      ? `<img class="flash-photo" src="${URL.createObjectURL(blob)}" alt="鑑定写真" />`
+      : `<p class="empty-note">📷 この端末に写真がありません</p>`;
+    quizBody.innerHTML =
+      head +
+      `<div class="flash-subject">${escapeHtml(item.subject)}</div>${img}
+       <p class="hint">これは何?名前を思いうかべてから答えを見よう</p>
+       <div class="form-actions"><button type="button" class="btn btn-primary" id="flash-reveal">答えを見る</button></div>`;
+  }
+  document.getElementById("flash-reveal").addEventListener("click", revealFlash);
+}
+
+function revealFlash() {
+  const item = flash.items[flash.index];
+  const back =
+    flash.mode === "weak"
+      ? `<div class="quiz-feedback ok">${escapeHtml(item.answer || "(答えメモなし)")}</div>`
+      : `<div class="quiz-feedback ok"><strong>${escapeHtml(item.name)}</strong>${
+          item.note ? `<div class="quiz-explanation">${escapeHtml(item.note)}</div>` : ""
+        }</div>`;
+  document.getElementById("flash-reveal").closest(".form-actions").remove();
+  quizBody.insertAdjacentHTML(
+    "beforeend",
+    back +
+      `<div class="form-actions">
+        <button type="button" class="btn btn-primary" id="flash-ok">${
+          flash.mode === "weak" ? "覚えた!(克服にする)" : "わかった ⭕"
+        }</button>
+        <button type="button" class="btn btn-ghost" id="flash-ng">まだ ❌</button>
+      </div>`
+  );
+  document.getElementById("flash-ok").addEventListener("click", () => {
+    flash.ok++;
+    if (flash.mode === "weak") {
+      const w = weakpoints.find((x) => x.id === flash.items[flash.index].id);
+      if (w) {
+        w.mastered = true;
+        save(K.weakpoints, weakpoints);
+      }
+    }
+    flash.index++;
+    renderFlashStep();
+  });
+  document.getElementById("flash-ng").addEventListener("click", () => {
+    flash.index++;
+    renderFlashStep();
+  });
+}
+
+function renderFlashResult() {
+  const total = flash.items.length;
+  const note =
+    flash.mode === "weak"
+      ? "「覚えた!」にした弱点は克服ずみになりました"
+      : "まちがえたカードは、またくり返し練習しよう!";
+  quizBody.innerHTML = `
+    <div class="quiz-result">
+      <div class="quiz-score">${flash.ok} / ${total}</div>
+      <p class="hint">${note}</p>
+      <div class="form-actions"><button type="button" class="btn btn-primary" id="flash-done">とじる</button></div>
+    </div>`;
+  document.getElementById("flash-done").addEventListener("click", closeQuiz);
+  if (flash.mode === "weak") renderWeak();
+  flash = null;
+}
+
+/* ---- 鑑定カードの追加・一覧 ---- */
+async function shrinkImage(file, max = 1024) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    if (scale >= 1 && file.size < 500 * 1024) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bmp.width * scale));
+    canvas.height = Math.max(1, Math.round(bmp.height * scale));
+    canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+    return blob || file;
+  } catch {
+    return file;
+  }
+}
+
+document.getElementById("card-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = document.getElementById("c-photo").files[0];
+  const name = document.getElementById("c-name").value.trim();
+  if (!file || !name) return;
+  const id = uid();
+  try {
+    await idbPut(`card-${id}`, await shrinkImage(file));
+  } catch {
+    toast("写真の保存に失敗しました");
+    return;
+  }
+  cards.push({
+    id,
+    subject: document.getElementById("c-subject").value,
+    name,
+    note: document.getElementById("c-note").value.trim(),
+    createdAt: Date.now(),
+  });
+  save(K.cards, cards);
+  e.target.reset();
+  renderCards();
+  toast(`「${name}」のカードを追加しました 🔍`);
+});
+
+async function renderCards() {
+  const el = document.getElementById("card-list");
+  if (cards.length === 0) {
+    el.innerHTML = `<p class="empty-note">カードはまだありません</p>`;
+    return;
+  }
+  const rows = await Promise.all(
+    [...cards]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(async (c) => {
+        const blob = await idbGet(`card-${c.id}`).catch(() => null);
+        const thumb = blob
+          ? `<img class="card-thumb" src="${URL.createObjectURL(blob)}" alt="" />`
+          : `<span class="card-thumb card-thumb-none">📷</span>`;
+        return `
+        <div class="print-item">
+          ${thumb}
+          <div class="print-info">
+            <div class="print-name">${escapeHtml(c.name)}</div>
+            <div class="print-meta">${escapeHtml(c.subject)}${c.note ? "・" + escapeHtml(c.note) : ""}</div>
+          </div>
+          <button class="icon-btn" data-del-card="${c.id}" aria-label="削除">🗑️</button>
+        </div>`;
+      })
+  );
+  el.innerHTML = rows.join("");
+}
+
+document.getElementById("card-list").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del-card]");
+  if (!del) return;
+  if (!confirm("このカードを削除しますか?")) return;
+  await idbDelete(`card-${del.dataset.delCard}`);
+  cards = cards.filter((c) => c.id !== del.dataset.delCard);
+  save(K.cards, cards);
+  renderCards();
+});
+
 /* ================= 初期化 ================= */
 populateSubjectSelects();
 resetForm();
 showView("home");
 checkDueNotifications();
+
+// PWA: Service Workerを登録(ホーム画面追加・オフライン利用)
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}

@@ -7,6 +7,11 @@
   <title>Seiseki|成績管理・学習支援</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#4499e9" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 </head>
 <body>
   <header class="hero">
@@ -103,16 +108,6 @@
             </div>
           </div>
           <div class="form-group">
-            <label>理解度</label>
-            <div class="rating-row" id="f-rating" role="radiogroup" aria-label="理解度を5段階で選ぶ">
-              <button type="button" class="rating-btn" data-val="1" aria-label="理解度1">😰</button>
-              <button type="button" class="rating-btn" data-val="2" aria-label="理解度2">😕</button>
-              <button type="button" class="rating-btn" data-val="3" aria-label="理解度3">🙂</button>
-              <button type="button" class="rating-btn" data-val="4" aria-label="理解度4">😄</button>
-              <button type="button" class="rating-btn" data-val="5" aria-label="理解度5">🤩</button>
-            </div>
-          </div>
-          <div class="form-group">
             <label for="f-memo">ふりかえり・メモ(任意)</label>
             <textarea id="f-memo" rows="2" placeholder="むずかしかったこと、次にがんばりたいことなど" maxlength="500"></textarea>
           </div>
@@ -159,12 +154,17 @@
         <h2 class="card-title" id="print-list-title">資料</h2>
         <div id="print-list"></div>
       </div>
-      <p class="tip">💡 各資料の「AIで問題をつくる」から、プリントを参照した模擬問題(選択+記述)を生成できます。</p>
+      <div class="card">
+        <h2 class="card-title" id="quizset-title">保存ずみ問題セット</h2>
+        <div id="quizset-list"></div>
+      </div>
+      <p class="tip">💡 「AIで問題をつくる」で生成した問題は自動で保存され、何度でも解きなおせます(2回目からはAI利用料がかかりません)。</p>
     </section>
 
     <!-- 弱点 -->
     <section id="view-weak" class="view" hidden>
       <div class="card">
+        <button type="button" class="btn btn-primary btn-block" id="flashcard-btn">📇 フラッシュカードで復習</button>
         <div id="weak-list"></div>
       </div>
       <div class="card">
@@ -183,6 +183,32 @@
             <textarea id="w-answer" rows="2" maxlength="300" placeholder="例:軸の位置で3パターンに分ける"></textarea>
           </div>
           <button type="submit" class="btn btn-primary">保存する</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🔍 鑑定カード(写真で暗記)</h2>
+        <p class="hint">農業鑑定競技の対策に。写真を見て名前を答える練習ができます。作物・器具・肥料などを撮ってカードにしよう。</p>
+        <button type="button" class="btn btn-coral btn-block" id="kantei-start-btn">🔍 鑑定モードでスタート</button>
+        <div id="card-list"></div>
+        <form id="card-form">
+          <div class="form-group">
+            <label for="c-photo">写真</label>
+            <input type="file" id="c-photo" accept="image/*" required />
+          </div>
+          <div class="form-group">
+            <label for="c-subject">科目</label>
+            <select id="c-subject" required></select>
+          </div>
+          <div class="form-group">
+            <label for="c-name">名前(答え)</label>
+            <input type="text" id="c-name" required maxlength="50" placeholder="例: ダイズ" />
+          </div>
+          <div class="form-group">
+            <label for="c-note">メモ(任意)</label>
+            <input type="text" id="c-note" maxlength="100" placeholder="例: マメ科・用途は食用/飼料" />
+          </div>
+          <button type="submit" class="btn btn-primary">カードを追加</button>
         </form>
       </div>
     </section>
@@ -272,11 +298,11 @@
 
       <div class="card">
         <h2 class="card-title">自分のAIキーで問題をつくる(任意)</h2>
-        <p class="hint">自分で用意したAPIキーを登録すると、学校のサーバーを通さずにAI問題生成が使えます。キーは<strong>この端末の中だけ</strong>に保存され、同期・書き出しには含まれません。</p>
+        <p class="hint">「AIで問題をつくる」には自分のAPIキーが必要です。登録するとこの端末からAI各社へ直接リクエストします。キーは<strong>この端末の中だけ</strong>に保存され、同期・書き出しには含まれません。</p>
         <div class="form-group">
           <label for="byok-provider">AIの種類</label>
           <select id="byok-provider">
-            <option value="">使わない(学校のAIを使う)</option>
+            <option value="">未設定(AI問題生成を使わない)</option>
             <option value="openai">OpenAI(ChatGPT)</option>
             <option value="anthropic">Anthropic(Claude)</option>
             <option value="gemini">Google(Gemini)</option>
